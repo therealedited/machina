@@ -18,16 +18,17 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
-using Machina.Infrastructure;
 
 namespace Machina.Sockets
 {
     public class RawCaptureSocket : ICaptureSocket
     {
-        private readonly object _lockObject = new object();
-        private Socket _socket;
+        private readonly int BUFFER_SIZE = (1024 * 64) + 1;
 
-        private readonly ConcurrentQueue<Tuple<byte[], int>> _pendingBuffers = new ConcurrentQueue<Tuple<byte[], int>>();
+        private readonly object _lockObject = new object();
+
+        private Socket _socket;
+        private ConcurrentQueue<byte[]> _pendingBuffers;
         private byte[] _currentBuffer;
 
         private bool _disposedValue;
@@ -41,8 +42,8 @@ namespace Machina.Sockets
                 // create the socket
                 _socket = CreateRawSocket(localAddress, remoteAddress);
 
-                // set buffer
-                _currentBuffer = BufferCache.AllocateBuffer();
+                _currentBuffer = new byte[BUFFER_SIZE];
+                _pendingBuffers = new ConcurrentQueue<byte[]>();
 
                 // start receiving data asynchronously
                 _ = _socket.BeginReceive(_currentBuffer, 0, _currentBuffer.Length, SocketFlags.None, new AsyncCallback(OnReceive), null);
@@ -73,8 +74,8 @@ namespace Machina.Sockets
 
         public CapturedData Receive()
         {
-            if (_pendingBuffers.TryDequeue(out Tuple<byte[], int> next))
-                return new CapturedData { Buffer = next.Item1, Size = next.Item2 };
+            if (_pendingBuffers.TryDequeue(out byte[] next))
+                return new CapturedData { Buffer = next, Size = next.Length };
 
             return new CapturedData { Buffer = null, Size = 0 };
         }
@@ -128,16 +129,19 @@ namespace Machina.Sockets
                     if (_socket == null)
                         return;
 
-                    byte[] buffer = _currentBuffer;
+                    byte[] buffer = null;
 
                     int received = _socket.EndReceive(ar);
                     if (received > 0)
-                        _currentBuffer = BufferCache.AllocateBuffer();
+                    {
+                        buffer = new byte[received];
+                        Array.Copy(_currentBuffer, 0, buffer, 0, received);
+                    }
 
                     _ = _socket.BeginReceive(_currentBuffer, 0, _currentBuffer.Length, SocketFlags.None, new AsyncCallback(OnReceive), null);
 
-                    if (received > 0)
-                        _pendingBuffers.Enqueue(new Tuple<byte[], int>(buffer, received));
+                    if (buffer != null)
+                        _pendingBuffers.Enqueue(buffer);
                 }
             }
             catch (ObjectDisposedException)
@@ -154,12 +158,15 @@ namespace Machina.Sockets
         {
             if (_currentBuffer != null)
             {
-                BufferCache.ReleaseBuffer(_currentBuffer);
                 _currentBuffer = null;
             }
+            if (_pendingBuffers?.Count > 0)
+            {
+                while (_pendingBuffers.TryDequeue(out byte[] _))
+                {
 
-            while (_pendingBuffers.TryDequeue(out Tuple<byte[], int> next))
-                BufferCache.ReleaseBuffer(next.Item1);
+                }
+            }
         }
 
         #region IDisposable

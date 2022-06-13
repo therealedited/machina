@@ -16,12 +16,12 @@
 using System.Diagnostics;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-namespace Machina.Tests
+namespace Machina.Tests.Utility
 {
     [TestClass]
     public class TestInfrastructure
     {
-        public static MemoryTraceListener Listener = new MemoryTraceListener();
+        public static MemoryTraceListener Listener { get; set; } = new();
 
         [AssemblyInitialize]
         public static void AssemblyInitialize(TestContext _1)

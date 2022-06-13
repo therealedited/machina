@@ -14,10 +14,12 @@
 // along with this program.  If not, see<http://www.gnu.org/licenses/>.
 
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Machina.Infrastructure;
 using Machina.Sockets;
+using Machina.Tests.Utility;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Machina.Tests
@@ -43,12 +45,12 @@ namespace Machina.Tests
 
             uint ipLong = ConversionUtility.IPStringToUint(ip);
 
-            PCapCaptureSocket sut = new PCapCaptureSocket();
+            PCapCaptureSocket sut = new();
             sut.StartCapture(ipLong);
 
             // start an async download
-            System.Net.WebClient client = new System.Net.WebClient();
-            Task t = client.DownloadStringTaskAsync("http://www.google.com");
+            HttpClient client = new();
+            Task t = client.GetStringAsync("http://www.google.com");
 
             int receivedCount = 0;
 
